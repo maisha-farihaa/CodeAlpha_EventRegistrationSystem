@@ -8,7 +8,6 @@ router.get('/', (req, res) => {
   res.json(events);
 });
 
-
 // get single event
 router.get('/:id', (req, res) => {
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
