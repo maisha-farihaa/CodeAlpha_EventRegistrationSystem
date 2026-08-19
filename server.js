@@ -14,4 +14,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/api/events', eventRoutes);
 
+app.use((req, res) => {
+  res.status(404).json({ error: 'Route not found.' });
+});
 
+app.listen(PORT, () => {
+  console.log(`Event Registration server running on http://localhost:${PORT}`);
+});
