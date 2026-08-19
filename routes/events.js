@@ -22,3 +22,23 @@ router.get('/:id', (req, res) => {
 
   res.json(event);
 });
+
+// create a new event
+router.post('/', (req, res) => {
+  const { title, description, event_date, location, capacity } = req.body;
+
+  if (!title || !event_date) {
+    return res.status(400).json({ error: 'title and event_date are required.' });
+  }
+
+  const insert = db.prepare(`
+    INSERT INTO events (title, description, event_date, location, capacity)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  const result = insert.run(title, description || '', event_date, location || '', capacity || 50);
+
+  const newEvent = db.prepare('SELECT * FROM events WHERE id = ?').get(result.lastInsertRowid);
+  res.status(201).json(newEvent);
+});
+
+module.exports = router;
