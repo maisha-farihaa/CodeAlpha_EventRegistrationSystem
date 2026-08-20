@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Event Registration — CodeAlpha</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Event Registration</h1>
+  <div class="org-status" id="orgStatus">Not signed in as organizer</div>
+
+  <button class="toggle-form-btn" id="toggleLoginBtn">Organizer login</button>
+  <div class="card" id="organizerLogin">
+    <div class="login-row">
+      <input type="password" id="orgPassword" placeholder="Organizer password">
+      <button id="orgLoginBtn">Sign in</button>
+    </div>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+
+  <button class="toggle-form-btn" id="toggleFormBtn" style="display:none;">+ Add Event</button>
+
+  <div class="card" id="addEventForm">
+    <input type="text" id="newTitle" placeholder="Event title">
+    <textarea id="newDescription" placeholder="Description"></textarea>
+    <div class="form-row">
+      <input type="text" id="newDate" placeholder="Date (e.g. 2026-09-15)">
+      <input type="text" id="newLocation" placeholder="Location">
+    </div>
+    <input type="number" id="newCapacity" placeholder="Capacity (default 50)">
+    <button id="createEventBtn">Create Event</button>
+    <div class="msg" id="createMsg"></div>
+  </div>
+
+  <div id="eventsList"></div>
+
+  <h2>Check my registrations</h2>
+  <div class="lookup-row">
+    <input type="text" id="lookupEmail" placeholder="your@email.com">
+    <button id="lookupBtn">View</button>
+  </div>
+  <div id="myRegistrations"></div>
+</div>
+
+<script>
+  let organizerPassword = null;
+
+  const orgStatus = document.getElementById('orgStatus');
+  const toggleLoginBtn = document.getElementById('toggleLoginBtn');
+  const organizerLogin = document.getElementById('organizerLogin');
+  const orgLoginBtn = document.getElementById('orgLoginBtn');
+  const orgPasswordInput = document.getElementById('orgPassword');
+  const loginMsg = document.getElementById('loginMsg');
+
+  const toggleFormBtn = document.getElementById('toggleFormBtn');
+  const addEventForm = document.getElementById('addEventForm');
+  const createEventBtn = document.getElementById('createEventBtn');
+  const createMsg = document.getElementById('createMsg');
+
+  const eventsList = document.getElementById('eventsList');
+  const lookupBtn = document.getElementById('lookupBtn');
+  const lookupEmail = document.getElementById('lookupEmail');
+  const myRegistrations = document.getElementById('myRegistrations');
+
+  toggleLoginBtn.addEventListener('click', () => {
+    organizerLogin.classList.toggle('open');
+  });
+
+  toggleFormBtn.addEventListener('click', () => {
+    addEventForm.classList.toggle('open');
+  });
+
+  orgLoginBtn.addEventListener('click', async () => {
+    const password = orgPasswordInput.value.trim();
+    loginMsg.textContent = '';
+
+    if (!password) return;
+
+    const res = await fetch('/api/events/verify-organizer', {
+      method: 'POST',
+      headers: { 'x-organizer-password': password }
+    });
+
+    if (!res.ok) {
+      loginMsg.textContent = 'Incorrect password.';
+      loginMsg.className = 'msg err';
+      return;
+    }
+
+    organizerPassword = password;
+    orgStatus.textContent = 'Signed in as organizer';
+    orgStatus.className = 'org-status active';
+    toggleFormBtn.style.display = 'inline-block';
+    organizerLogin.classList.remove('open');
+    orgPasswordInput.value = '';
+    loadEvents();
+  });
+
+  createEventBtn.addEventListener('click', async () => {
+    const title = document.getElementById('newTitle').value.trim();
+    const description = document.getElementById('newDescription').value.trim();
+    const event_date = document.getElementById('newDate').value.trim();
+    const location = document.getElementById('newLocation').value.trim();
+    const capacity = document.getElementById('newCapacity').value.trim();
+
+    createMsg.textContent = '';
+
+    if (!title || !event_date) {
+      createMsg.textContent = 'Title and date are required.';
+      createMsg.className = 'msg err';
+      return;
+    }
+
+    const res = await fetch('/api/events', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-organizer-password': organizerPassword
+      },
+      body: JSON.stringify({
+        title,
+        description,
+        event_date,
+        location,
+        capacity: capacity ? Number(capacity) : undefined
+      })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      createMsg.textContent = data.error || 'Something went wrong.';
+      createMsg.className = 'msg err';
+      return;
+    }
+
+    createMsg.textContent = 'Event created!';
+    createMsg.className = 'msg ok';
+
+    document.getElementById('newTitle').value = '';
+    document.getElementById('newDescription').value = '';
+    document.getElementById('newDate').value = '';
+    document.getElementById('newLocation').value = '';
+    document.getElementById('newCapacity').value = '';
+
+    loadEvents();
+  });
+
+  async function deleteEvent(eventId) {
+    const res = await fetch(`/api/events/${eventId}`, {
+      method: 'DELETE',
+      headers: { 'x-organizer-password': organizerPassword }
+    });
+
+    if (res.ok) loadEvents();
+  }
+
+  async function loadEvents() {
+    const res = await fetch('/api/events');
+    const events = await res.json();
+
+    if (events.length === 0) {
+      eventsList.innerHTML = '<p class="empty-state">No events yet.</p>';
+      return;
+    }
+
+    eventsList.innerHTML = events.map(ev => `
+      <div class="card">
+        <div class="event-title">${ev.title}</div>
+        <div class="event-meta">${ev.event_date} · ${ev.location || 'TBA'}</div>
+        <p>${ev.description || ''}</p>
+        <input type="text" id="name-${ev.id}" placeholder="Your name">
+        <input type="text" id="email-${ev.id}" placeholder="Your email">
+        <button onclick="register(${ev.id})">Register</button>
+        ${organizerPassword ? `<button class="delete-btn" onclick="deleteEvent(${ev.id})">Delete Event</button>` : ''}
+        <div class="msg" id="msg-${ev.id}"></div>
+      </div>
+    `).join('');
+  }
+
+  async function register(eventId) {
+    const name = document.getElementById(`name-${eventId}`).value.trim();
+    const email = document.getElementById(`email-${eventId}`).value.trim();
+    const msg = document.getElementById(`msg-${eventId}`);
+    msg.textContent = '';
+
+    if (!name || !email) {
+      msg.textContent = 'Please fill in both fields.';
+      msg.className = 'msg err';
+      return;
+    }
+
+    const res = await fetch(`/api/events/${eventId}/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      msg.textContent = data.error;
+      msg.className = 'msg err';
+      return;
+    }
+
+    msg.textContent = 'Registered successfully!';
+    msg.className = 'msg ok';
+  }
+
+  lookupBtn.addEventListener('click', async () => {
+    const email = lookupEmail.value.trim();
+    if (!email) return;
+
+    const res = await fetch(`/api/registrations?email=${encodeURIComponent(email)}`);
+    const rows = await res.json();
+
+    if (rows.length === 0) {
+      myRegistrations.innerHTML = '<p class="empty-state">No registrations found.</p>';
+      return;
+    }
+
+    myRegistrations.innerHTML = rows.map(r => `
+      <div class="reg-row">
+        <span>${r.title} — ${r.event_date}</span>
+        <button onclick="cancelReg(${r.id})">Cancel</button>
+      </div>
+    `).join('');
+  });
+
+  async function cancelReg(id) {
+    await fetch(`/api/registrations/${id}`, { method: 'DELETE' });
+    lookupBtn.click();
+  }
+
+  loadEvents();
+</script>
+</body>
+</html>
