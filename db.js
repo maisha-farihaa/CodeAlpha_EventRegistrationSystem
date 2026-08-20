@@ -1,32 +1,74 @@
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
+const fs = require('fs');
 const path = require('path');
 
-const db = new Database(path.join(__dirname, 'events.db'));
+const DB_FILE = path.join(__dirname, 'events.db');
 
-// events table
-db.exec(`
-  CREATE TABLE IF NOT EXISTS events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    description TEXT,
-    event_date TEXT NOT NULL,
-    location TEXT,
-    capacity INTEGER DEFAULT 50,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )
-`);
+let db;
 
-// registrations table, one row per person per event
-db.exec(`
-  CREATE TABLE IF NOT EXISTS registrations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (event_id) REFERENCES events(id),
-    UNIQUE(event_id, email)
-  )
-`);
+// loads the database file if it exists, otherwise creates a new one
+async function initDb() {
+  const SQL = await initSqlJs();
 
-module.exports = db;
+  if (fs.existsSync(DB_FILE)) {
+    const fileBuffer = fs.readFileSync(DB_FILE);
+    db = new SQL.Database(fileBuffer);
+  } else {
+    db = new SQL.Database();
+  }
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      description TEXT,
+      event_date TEXT NOT NULL,
+      location TEXT,
+      capacity INTEGER DEFAULT 50,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS registrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(event_id, email)
+    )
+  `);
+
+  saveDb();
+  return db;
+}
+
+// writes the current database state to disk
+function saveDb() {
+  const data = db.export();
+  fs.writeFileSync(DB_FILE, Buffer.from(data));
+}
+
+function getDb() {
+  return db;
+}
+
+// runs a SELECT and returns matching rows as plain objects
+function selectAll(sql, params = []) {
+  const stmt = db.prepare(sql);
+  stmt.bind(params);
+  const rows = [];
+  while (stmt.step()) {
+    rows.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return rows;
+}
+
+function selectOne(sql, params = []) {
+  const rows = selectAll(sql, params);
+  return rows.length > 0 ? rows[0] : null;
+}
+
+module.exports = { initDb, getDb, saveDb, selectAll, selectOne };
